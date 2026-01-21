@@ -1,8 +1,3 @@
-# Snowera CI/CD Framework Files
-
-## 1. Reusable Deployment Workflow
-# **File:** `.github/workflows/reusable-deploy.yml`
-
 name: Snowera Deployment Workflow
 
 on:
@@ -23,7 +18,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Snowflake
+    name: Snowera Deploy
     runs-on: ubuntu-latest
 
     env:
@@ -43,7 +38,7 @@ jobs:
       - name: Checkout Framework Repository
         uses: actions/checkout@v4
         with:
-          repository: your-org/snowera_cicd
+          repository: saianuragp/snowera_cicd
           path: .cicd-framework
           ref: main
 
@@ -55,7 +50,7 @@ jobs:
       - name: Setup Snow CLI
         uses: snowflakedb/snowflake-cli-action@v1.5
 
-      - name: Find and Deploy Modified SQL Files
+      - name: Deploy
         run: |
           python .cicd-framework/scripts/deploy.py
 
