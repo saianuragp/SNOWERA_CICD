@@ -24,7 +24,7 @@ def infer_environment(role, database):
     if "prod" in key:
         return "PROD"
     if "preprod" in key or "pp" in key:
-        return "PRE-PROD"
+        return "PREPROD"
     if "dev" in key:
         return "DEV"
     return "UNKNOWN"
@@ -73,8 +73,8 @@ def main():
         os.environ["SNOWFLAKE_DATABASE"],
     )
 
-    if env != "PRE-PROD":
-        print("❌ Validation must run against PRE-PROD only")
+    if env != "PREPROD":
+        print("❌ Validation must run against PREPROD only")
         sys.exit(1)
 
     sql_files = get_changed_sql_files()
@@ -83,7 +83,7 @@ def main():
         print("ℹ️ No SQL changes detected")
         sys.exit(0)
 
-    print(f"🧪 Validating {len(sql_files)} SQL files in PRE-PROD")
+    print(f"🧪 Validating {len(sql_files)} SQL files in PREPROD")
 
     for sql in sql_files:
         print(f"▶ Executing {sql}")
