@@ -1,4 +1,4 @@
- name: Snowera Validate
+ name: Snowera Validate Workflow
 
 on:
   workflow_call:
