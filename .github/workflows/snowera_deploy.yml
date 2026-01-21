@@ -1,4 +1,4 @@
-name: Snowera Deployment Workflow
+name: Snowera Deploy Workflow
 
 on:
   workflow_call:
@@ -17,8 +17,7 @@ on:
         required: true
 
 jobs:
-  deploy:
-    name: Snowera Deploy
+  validate:
     runs-on: ubuntu-latest
 
     env:
@@ -30,37 +29,18 @@ jobs:
       SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Checkout Framework Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: saianuragp/snowera_cicd
-          path: .cicd-framework
+          path: .cicd
           ref: main
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Setup Snow CLI
-        uses: snowflakedb/snowflake-cli-action@v1.5
+      - run: pip install -r .cicd/requirements.txt
 
-      - name: Deploy
-        run: |
-          python .cicd-framework/scripts/deploy.py
-
-      - name: Deployment Summary
-        if: always()
-        run: |
-          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** PROD " >> $GITHUB_STEP_SUMMARY
-          echo "- **Database:** ${{ env.SNOWFLAKE_DATABASE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **User:** ${{ env.SNOWFLAKE_USER }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+      - run: python .cicd/scripts/deploy.py
