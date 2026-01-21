@@ -6,7 +6,7 @@ from pathlib import Path
 REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
     "SNOWFLAKE_USER",
-    "SNOWFLAKE_PASSWORD",
+    "SNOWFLAKE_PASSWORD",  # Will NOT print
     "SNOWFLAKE_ROLE",
     "SNOWFLAKE_WAREHOUSE",
     "SNOWFLAKE_DATABASE",
@@ -18,6 +18,15 @@ def require(var):
         print(f"❌ Missing env var: {var}")
         sys.exit(1)
     return val
+
+def print_env_vars():
+    print("🌐 Environment variables (password hidden):")
+    for var in REQUIRED_VARS:
+        if var == "SNOWFLAKE_PASSWORD":
+            print(f"- {var}: ******** (hidden)")
+        else:
+            print(f"- {var}: {os.getenv(var)}")
+    print("---\n")
 
 def infer_environment(role, database):
     key = f"{role}_{database}".lower()
@@ -65,8 +74,12 @@ def write_summary(env, files):
             f.write(f"- `{file}`\n")
 
 def main():
+    # Ensure all required environment variables exist
     for v in REQUIRED_VARS:
         require(v)
+
+    # Print environment variables (safe)
+    print_env_vars()
 
     env = infer_environment(
         os.environ["SNOWFLAKE_ROLE"],
