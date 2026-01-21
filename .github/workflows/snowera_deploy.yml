@@ -1,0 +1,71 @@
+# Snowera CI/CD Framework Files
+
+## 1. Reusable Deployment Workflow
+# **File:** `.github/workflows/reusable-deploy.yml`
+
+name: Snowera Deployment Workflow
+
+on:
+  workflow_call:
+    secrets:
+      SNOWFLAKE_ACCOUNT:
+        required: true
+      SNOWFLAKE_USER:
+        required: true
+      SNOWFLAKE_PASSWORD:
+        required: true
+      SNOWFLAKE_PROD_ROLE:
+        required: true
+      SNOWFLAKE_WAREHOUSE:
+        required: true
+      SNOWFLAKE_PROD_DATABASE:
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to Snowflake
+    runs-on: ubuntu-latest
+
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_PROD_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_PROD_DATABASE }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Framework Repository
+        uses: actions/checkout@v4
+        with:
+          repository: your-org/snowera_cicd
+          path: .cicd-framework
+          ref: main
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Snow CLI
+        uses: snowflakedb/snowflake-cli-action@v1.5
+
+      - name: Find and Deploy Modified SQL Files
+        run: |
+          python .cicd-framework/scripts/deploy.py
+
+      - name: Deployment Summary
+        if: always()
+        run: |
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** PROD " >> $GITHUB_STEP_SUMMARY
+          echo "- **Database:** ${{ env.SNOWFLAKE_DATABASE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **User:** ${{ env.SNOWFLAKE_USER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
