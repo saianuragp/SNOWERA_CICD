@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import snowflake.connector
+import json
 
 REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
@@ -22,7 +23,7 @@ def require_env_vars():
 
 def connect_to_snowflake():
     """Create and return a Snowflake connection"""
-    conn = snowflake.connector.connect(
+    return snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
         account=os.environ["SNOWFLAKE_ACCOUNT"],
@@ -31,7 +32,6 @@ def connect_to_snowflake():
         database=os.environ["SNOWFLAKE_DATABASE"],
         insecure_mode=True
     )
-    return conn
 
 def get_changed_sql_files():
     """Return a list of changed SQL files relative to main"""
@@ -59,13 +59,9 @@ def run_sql_file(conn, file_path):
         cs.close()
 
 def main():
-    # Validate environment variables
     require_env_vars()
-
-    # Connect to Snowflake
     conn = connect_to_snowflake()
 
-    # Detect changed SQL files
     sql_files = get_changed_sql_files()
     if not sql_files:
         print("ℹ️ No SQL changes detected")
@@ -76,6 +72,13 @@ def main():
     for sql_file in sql_files:
         print(f"▶ Executing {sql_file}")
         run_sql_file(conn, sql_file)
+
+    # Save SQL files list to artifact for Deploy workflow
+    os.makedirs(".cicd", exist_ok=True)
+    artifact_file = ".cicd/changed_sql_files.json"
+    with open(artifact_file, "w") as f:
+        json.dump(sql_files, f)
+    print(f"📦 Saved changed SQL files artifact to {artifact_file}")
 
     print("✅ Validation completed successfully")
     conn.close()
