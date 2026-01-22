@@ -1,9 +1,8 @@
 import os
 import sys
-import subprocess
 import snowflake.connector
+import json
 
-# Required environment variables for PROD deployment
 REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
     "SNOWFLAKE_USER",
@@ -11,6 +10,7 @@ REQUIRED_VARS = [
     "SNOWFLAKE_ROLE",
     "SNOWFLAKE_WAREHOUSE",
     "SNOWFLAKE_DATABASE",
+    "CHANGED_SQL_FILES_ARTIFACT"
 ]
 
 def require_env_vars():
@@ -22,8 +22,8 @@ def require_env_vars():
             sys.exit(1)
 
 def connect_to_snowflake():
-    """Create and return a Snowflake connection (insecure_mode=True for CI/CD)"""
-    conn = snowflake.connector.connect(
+    """Create and return a Snowflake connection"""
+    return snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
         account=os.environ["SNOWFLAKE_ACCOUNT"],
@@ -32,17 +32,15 @@ def connect_to_snowflake():
         database=os.environ["SNOWFLAKE_DATABASE"],
         insecure_mode=True
     )
-    return conn
 
-def get_changed_sql_files():
-    """Return a list of changed SQL files relative to main"""
-    result = subprocess.run(
-        ["git", "diff", "--name-only", "origin/main...HEAD"],
-        capture_output=True,
-        text=True,
-        check=True
-    )
-    return [f for f in result.stdout.splitlines() if f.endswith(".sql")]
+def get_sql_files_from_artifact(artifact_path):
+    """Read JSON file produced by PREPROD validate workflow"""
+    if not os.path.exists(artifact_path):
+        print(f"❌ Artifact file not found: {artifact_path}")
+        sys.exit(1)
+    with open(artifact_path, "r") as f:
+        files = json.load(f)
+    return files
 
 def run_sql_file(conn, file_path):
     """Execute a SQL file using the given Snowflake connection"""
@@ -60,16 +58,14 @@ def run_sql_file(conn, file_path):
         cs.close()
 
 def main():
-    # Validate environment variables
     require_env_vars()
-
-    # Connect to Snowflake
     conn = connect_to_snowflake()
 
-    # Detect changed SQL files
-    sql_files = get_changed_sql_files()
+    artifact_path = os.environ["CHANGED_SQL_FILES_ARTIFACT"]
+    sql_files = get_sql_files_from_artifact(artifact_path)
+
     if not sql_files:
-        print("ℹ️ No SQL changes detected")
+        print("ℹ️ No SQL changes detected to deploy")
         conn.close()
         sys.exit(0)
 
