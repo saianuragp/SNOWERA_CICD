@@ -9,7 +9,7 @@ on:
 
 jobs:
   deploy-prod:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
