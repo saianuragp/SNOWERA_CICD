@@ -1,7 +1,9 @@
 import os
 import sys
 import subprocess
+import snowflake.connector
 
+# Required environment variables for PROD deployment
 REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
     "SNOWFLAKE_USER",
@@ -11,81 +13,73 @@ REQUIRED_VARS = [
     "SNOWFLAKE_DATABASE",
 ]
 
-def require(var):
-    val = os.getenv(var)
-    if not val:
-        print(f"❌ Missing env var: {var}")
-        sys.exit(1)
-    return val
+def require_env_vars():
+    """Ensure all required environment variables exist"""
+    for var in REQUIRED_VARS:
+        val = os.getenv(var)
+        if not val:
+            print(f"❌ Missing env var: {var}")
+            sys.exit(1)
 
-def infer_environment(role, database):
-    key = f"{role}_{database}".lower()
-    if "prod" in key:
-        return "PROD"
-    return "UNKNOWN"
+def connect_to_snowflake():
+    """Create and return a Snowflake connection (insecure_mode=True for CI/CD)"""
+    conn = snowflake.connector.connect(
+        user=os.environ["SNOWFLAKE_USER"],
+        password=os.environ["SNOWFLAKE_PASSWORD"],
+        account=os.environ["SNOWFLAKE_ACCOUNT"],
+        role=os.environ["SNOWFLAKE_ROLE"],
+        warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
+        database=os.environ["SNOWFLAKE_DATABASE"],
+        insecure_mode=True
+    )
+    return conn
 
 def get_changed_sql_files():
+    """Return a list of changed SQL files relative to main"""
     result = subprocess.run(
-        ["git", "diff", "--name-only", "HEAD~1...HEAD"],
+        ["git", "diff", "--name-only", "origin/main...HEAD"],
         capture_output=True,
         text=True,
-        check=True,
+        check=True
     )
     return [f for f in result.stdout.splitlines() if f.endswith(".sql")]
 
-def run_sql(file_path):
-    subprocess.run(
-        [
-            "snow", "sql",
-            "-f", file_path,
-            "--database", os.environ["SNOWFLAKE_DATABASE"],
-            "--warehouse", os.environ["SNOWFLAKE_WAREHOUSE"],
-            "--role", os.environ["SNOWFLAKE_ROLE"],
-        ],
-        check=True,
-    )
+def run_sql_file(conn, file_path):
+    """Execute a SQL file using the given Snowflake connection"""
+    with open(file_path, "r") as f:
+        sql_content = f.read()
 
-def write_summary(env, files):
-    summary = os.getenv("GITHUB_STEP_SUMMARY")
-    if not summary:
-        return
-
-    with open(summary, "a") as f:
-        f.write("## 🚀 Snowflake Deployment Summary\n\n")
-        f.write(f"- **Environment:** `{env}`\n")
-        f.write(f"- **Database:** `{os.environ['SNOWFLAKE_DATABASE']}`\n")
-        f.write(f"- **Role:** `{os.environ['SNOWFLAKE_ROLE']}`\n")
-        f.write("\n### Executed SQL Files\n")
-        for file in files:
-            f.write(f"- `{file}`\n")
+    try:
+        cs = conn.cursor()
+        cs.execute(sql_content)
+        print(f"✅ Successfully executed {file_path}")
+    except Exception as e:
+        print(f"❌ Error executing {file_path}: {e}")
+        raise
+    finally:
+        cs.close()
 
 def main():
-    for v in REQUIRED_VARS:
-        require(v)
+    # Validate environment variables
+    require_env_vars()
 
-    env = infer_environment(
-        os.environ["SNOWFLAKE_ROLE"],
-        os.environ["SNOWFLAKE_DATABASE"],
-    )
+    # Connect to Snowflake
+    conn = connect_to_snowflake()
 
-    if env != "PROD":
-        print("❌ Deployment must run against PROD only")
-        sys.exit(1)
-
+    # Detect changed SQL files
     sql_files = get_changed_sql_files()
-
     if not sql_files:
         print("ℹ️ No SQL changes detected")
+        conn.close()
         sys.exit(0)
 
     print(f"🚀 Deploying {len(sql_files)} SQL files to PROD")
+    for sql_file in sql_files:
+        print(f"▶ Executing {sql_file}")
+        run_sql_file(conn, sql_file)
 
-    for sql in sql_files:
-        print(f"▶ Executing {sql}")
-        run_sql(sql)
-
-    write_summary(env, sql_files)
-    print("🚀 Deployment completed successfully")
+    print("✅ Deployment to PROD completed successfully")
+    conn.close()
 
 if __name__ == "__main__":
     main()
