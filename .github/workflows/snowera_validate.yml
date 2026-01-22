@@ -29,21 +29,28 @@ jobs:
       SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Current Repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # fetch full history including origin/main
+          fetch-depth: 0
 
-      - uses: actions/checkout@v4
+      - name: Checkout Snowera Repo
+        uses: actions/checkout@v4
         with:
           repository: saianuragp/snowera_cicd
           path: .cicd
           ref: main
 
-      - uses: actions/setup-python@v5
+      - name: Install Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - run: pip install -r .cicd/prereq/requirements.txt
+      - name: Install Requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r .cicd/prereq/requirements.txt
 
-      - run: python .cicd/scripts/validate.py
+      - name: Snowera Validate
+        run: |
+          python .cicd/scripts/validate.py
