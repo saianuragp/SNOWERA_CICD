@@ -1,1 +1,3 @@
-snowflake-connector-python==3.0.1  # Use latest stable version
+snowflake-connector-python==3.0.1
+cryptography>=40.0.0
+cffi>=1.15.1
