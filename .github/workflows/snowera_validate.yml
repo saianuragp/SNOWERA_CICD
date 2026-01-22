@@ -59,7 +59,8 @@ jobs:
           python .cicd/scripts/validate.py
 
       - name: Upload changed SQL artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: changed-sql-files
-          path: .cicd/changed_sql_files.json
+          name: validated-sql-files
+          path: .cicd/artifacts/changed_sql_files.json
+          retention-days: 7
