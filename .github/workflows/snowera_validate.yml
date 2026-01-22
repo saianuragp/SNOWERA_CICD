@@ -18,7 +18,7 @@ on:
 
 jobs:
   validate:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
