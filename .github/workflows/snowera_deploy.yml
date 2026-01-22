@@ -1,24 +1,32 @@
 name: Snowera Deploy Workflow
 
 on:
-  workflow_dispatch:
-    inputs:
-      artifact-path:
-        description: 'Path to JSON artifact with validated SQL files'
+  workflow_call:
+    secrets:
+      SNOWFLAKE_ACCOUNT:
+        required: true
+      SNOWFLAKE_USER:
+        required: true
+      SNOWFLAKE_PASSWORD:
+        required: true
+      SNOWFLAKE_ROLE:
+        required: true
+      SNOWFLAKE_WAREHOUSE:
+        required: true
+      SNOWFLAKE_DATABASE:
         required: true
 
 jobs:
-  deploy-prod:
+  deploy:
     runs-on: ubuntu-24.04
 
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
       SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
       SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE_PROD }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
       SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE_PROD }}
-      CHANGED_SQL_FILES_ARTIFACT: ${{ github.event.inputs['artifact-path'] }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
 
     steps:
       - name: Checkout Current Repo
@@ -32,7 +40,13 @@ jobs:
           repository: saianuragp/snowera_cicd
           path: .cicd
           ref: main
-
+    
+      - name: Validate SQL artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: validated-sql-files
+          path: artifacts
+          
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y libffi-dev
 
