@@ -45,9 +45,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          
-      - name: Install Dependant libraries
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev libffi-dev
 
       - name: Install Requirements
         run: |
