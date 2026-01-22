@@ -29,7 +29,7 @@ def connect_to_snowflake():
         role=os.environ["SNOWFLAKE_ROLE"],
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
         database=os.environ["SNOWFLAKE_DATABASE"],
-        ocsp_fail_open=True
+        insecure_mode=True
     )
     return conn
 
