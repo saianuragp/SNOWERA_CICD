@@ -40,12 +40,6 @@ jobs:
           repository: saianuragp/snowera_cicd
           path: .cicd
           ref: main
-    
-      - name: Validate SQL artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: validated-sql-files
-          path: artifacts
           
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y libffi-dev
