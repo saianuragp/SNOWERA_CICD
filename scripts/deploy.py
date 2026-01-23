@@ -48,7 +48,7 @@ def infer_schema_and_repo():
     return schema, repo
 
 
-def fetch_validated_sql_files(conn, schema, repo_name, commit_sha):
+def fetch_validated_sql_files(conn, schema, repo_name):
     """Get all SQL files validated by validate.py for this repo and commit"""
     sql = f"""
         SELECT sql_file
