@@ -2,7 +2,7 @@ import os, sys, json, subprocess
 import snowflake.connector
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config", "config.json")
+CONFIG_PATH = os.path.join(BASE_DIR,"..", "config", "config.json")
 
 # ---------------- ASCII ART ----------------
 def validate_header():
@@ -20,7 +20,7 @@ def validate_header():
 
 # ---------------- CONFIG ----------------
 def load_config():
-    with open(CONFIG_PATH) as f:
+    with open(CONFIG_PATH, "r") as f:
         return json.load(f)
 
 CFG = load_config()
