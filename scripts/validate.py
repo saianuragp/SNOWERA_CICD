@@ -23,6 +23,20 @@ REQUIRED_VARS = [
 # Helpers
 # ----------------------------
 
+def validate_header():
+    return r"""
+    
+     *        .  *   
+    |-|       *   *
+    |-|      _   .  _   
+    |-|     |   *    |
+    |-|     |~~~~~~~v|
+    |-|     |  O o * |
+   /___\    |o___O___|
+    
+    """
+
+
 def require_env_vars():
     for var in REQUIRED_VARS:
         if not os.getenv(var):
@@ -119,6 +133,7 @@ def insert_manifest_record(conn, repository, schema, sql_file):
 # ----------------------------
 
 def main():
+    validate_header()
     require_env_vars()
 
     repository = get_repository_name()
