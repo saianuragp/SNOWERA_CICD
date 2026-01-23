@@ -3,6 +3,9 @@ import snowflake.connector
 
 # ---------------- ASCII ART ----------------
 def validate_header():
+    print("="*60)
+    print("VALIDATION STARTED")
+    print("="*60)
     print(r"""
     
      *        .  *   
@@ -101,8 +104,8 @@ def print_summary(role, warehouse, database, schema):
     print("="*60)
     print("🚀 VALIDATE SUMMARY 🚀")
     print("="*60)
-    print("Snowflake Account  : (config)")
-    print("Snowflake User     : (config)")
+    print(f"Snowflake Account  : {ACCOUNT}.snowflakecomputing.com")
+    print(f"Snowflake User     : {USER}")
     print(f"Role               : {role}")
     print(f"Warehouse          : {warehouse}")
     print(f"Database           : {database}")
