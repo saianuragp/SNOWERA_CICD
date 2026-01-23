@@ -1,9 +1,6 @@
 import os, sys, json
 import snowflake.connector
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "..", "config", "config.json")
-
 # ---------------- ASCII ART ----------------
 def deploy_header():
     print(r"""
@@ -35,17 +32,12 @@ def deploy_header():
     """)
 
 # ---------------- CONFIG ----------------
-def load_config():
-    with open(CONFIG_PATH) as f:
-        return json.load(f)
-
-CFG = load_config()
-ACCOUNT = CFG["account"]
-USER = CFG["user"]
-MANIFEST_ROLE = CFG["manifest_role"]
-MANIFEST_TABLE = CFG["manifest_table"]
-CONFIG_TABLE = CFG["config_table"]
-
+ACCOUNT = "ZIGEXOL-MF56464"
+USER = "ANURAG_SNOWERA_CICD"
+MANIFEST_ROLE = "ANU_DEVOPS_FR_PROD_TASK_ETL"
+MANIFEST_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.GITHUB_DEPLOYMENT_LOG"
+CONFIG_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.SNOWFLAKE_CONFIG"
+PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
 PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
 if not PASSWORD:
     print("❌ Missing SNOWFLAKE_PASSWORD")
@@ -132,13 +124,13 @@ def print_summary(account, user, role, warehouse, database, schema):
     print("="*60)
     print("🚀 DEPLOY SUMMARY 🚀")
     print("="*60)
-    print(f"Account    : {account}")
-    print(f"User       : {user}")
-    print(f"Role       : {role}")
-    print(f"Warehouse  : {warehouse}")
-    print(f"Database   : {database}")
-    print(f"Schema     : {schema}")
-    print(f"Repository : {REPO_NAME}")
+    print(f"Snowflake Account    : {account}")
+    print(f"Snowflake User       : {user}")
+    print(f"Role                 : {role}")
+    print(f"Warehouse            : {warehouse}")
+    print(f"Database             : {database}")
+    print(f"Schema               : {schema}")
+    print(f"Repository           : {REPO_NAME}")
     print("="*60)
 
 
