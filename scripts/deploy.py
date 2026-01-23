@@ -13,9 +13,9 @@ REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
     "SNOWFLAKE_USER",
     "SNOWFLAKE_PASSWORD",
-    "SNOWFLAKE_ROLE_PROD",
+    "SNOWFLAKE_ROLE",
     "SNOWFLAKE_WAREHOUSE",
-    "SNOWFLAKE_DATABASE_PROD",
+    "SNOWFLAKE_DATABASE",
 ]
 
 # ----------------------------
@@ -30,7 +30,7 @@ def require_env_vars():
 
 
 def connect_to_snowflake(role, database=None):
-    db = database if database else os.environ["SNOWFLAKE_DATABASE_PROD"]
+    db = database if database else os.environ["SNOWFLAKE_DATABASE"]
     return snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
@@ -110,7 +110,7 @@ def main():
     schema, repo_name = infer_schema_and_repo()
 
     # 1️⃣ Deployment phase (role from secrets)
-    deploy_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE_PROD"])
+    deploy_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
 
     sql_files = fetch_validated_sql_files(deploy_conn, repo_name, commit_sha)
     if not sql_files:
