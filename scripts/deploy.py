@@ -1,6 +1,9 @@
 import os, sys, json
 import snowflake.connector
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "..", "config", "config.json")
+
 # ---------------- ASCII ART ----------------
 def deploy_header():
     print(r"""
@@ -33,7 +36,7 @@ def deploy_header():
 
 # ---------------- CONFIG ----------------
 def load_config():
-    with open(".cicd/config.json") as f:
+    with open(CONFIG_PATH) as f:
         return json.load(f)
 
 CFG = load_config()
