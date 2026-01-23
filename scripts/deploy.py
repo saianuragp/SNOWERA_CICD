@@ -57,22 +57,21 @@ def connect_snowflake(role_override=None):
 # ----------------------------
 
 def fetch_validated_sql_files(conn):
-    database = os.environ["SNOWFLAKE_DATABASE"]
     schema = infer_schema()  # Make sure this matches what you inserted in validate
 
     sql = f"""
-        SELECT "SQL_FILE"
+        SELECT SQL_FILE
         FROM {MANIFEST_TABLE}
-        WHERE "DATABASE" = %s
-          AND "SCHEMA" = %s
-          AND "STATUS" = 'VALIDATED'
-          AND "DEPLOYED_AT" IS NULL
-        ORDER BY "VALIDATED_AT"
+        WHERE COMMIT_SHA = %s
+          AND SCHEMA = %s
+          AND STATUS = 'VALIDATED'
+          AND DEPLOYED_AT IS NULL
+        ORDER BY VALIDATED_AT
     """
 
     cur = conn.cursor()
     try:
-        cur.execute(sql, (database, schema))
+        cur.execute(sql, (commit_sha, database, schema))
         return [row[0] for row in cur.fetchall()]
     finally:
         cur.close()
@@ -112,14 +111,14 @@ def update_manifest_record(sql_file):
         SET
             deployed_at = CURRENT_TIMESTAMP(),
             status = 'DEPLOYED'
-        WHERE database = %s
+        WHERE commit_sha = %s
           AND schema = %s
           AND sql_file = %s
     """
 
     cur = conn.cursor()
     try:
-        cur.execute(sql, (database, schema, sql_file))
+        cur.execute(sql, (commit_sha, database, schema, sql_file))
         print(f"📘 Manifest updated for {sql_file}")
     finally:
         cur.close()
