@@ -2,7 +2,13 @@ import os
 import sys
 import subprocess
 import snowflake.connector
-import json
+
+# ----------------------------
+# Constants
+# ----------------------------
+
+MANIFEST_ROLE = ""
+MANIFEST_TABLE = ""
 
 REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
@@ -13,75 +19,126 @@ REQUIRED_VARS = [
     "SNOWFLAKE_DATABASE",
 ]
 
+# ----------------------------
+# Helpers
+# ----------------------------
+
 def require_env_vars():
-    """Ensure all required environment variables exist"""
     for var in REQUIRED_VARS:
-        val = os.getenv(var)
-        if not val:
-            print(f"❌ Missing env var: {var}")
+        if not os.getenv(var):
+            print(f"❌ Missing environment variable: {var}")
             sys.exit(1)
 
-def connect_to_snowflake():
-    """Create and return a Snowflake connection"""
+
+def connect_to_snowflake(role):
     return snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
         account=os.environ["SNOWFLAKE_ACCOUNT"],
-        role=os.environ["SNOWFLAKE_ROLE"],
+        role=role,
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
         database=os.environ["SNOWFLAKE_DATABASE"],
-        insecure_mode=True
+        insecure_mode=True,
     )
 
+
+def infer_schema():
+    repo = os.getenv("GITHUB_REPOSITORY", "")
+    return repo.split(".", 1)[1] if "." in repo else "PUBLIC"
+
+
 def get_changed_sql_files():
-    """Return a list of changed SQL files relative to main"""
     result = subprocess.run(
         ["git", "diff", "--name-only", "origin/main...HEAD"],
         capture_output=True,
         text=True,
-        check=True
+        check=True,
     )
     return [f for f in result.stdout.splitlines() if f.endswith(".sql")]
 
+
 def run_sql_file(conn, file_path):
-    """Execute a SQL file using the given Snowflake connection"""
     with open(file_path, "r") as f:
         sql_content = f.read()
 
+    cur = conn.cursor()
     try:
-        cs = conn.cursor()
-        cs.execute(sql_content)
-        print(f"✅ Successfully executed {file_path}")
-    except Exception as e:
-        print(f"❌ Error executing {file_path}: {e}")
-        raise
+        cur.execute(sql_content)
+        print(f"✅ Executed {file_path}")
     finally:
-        cs.close()
+        cur.close()
+
+
+def insert_manifest_record(conn, commit_sha, database, schema, sql_file):
+    sql = f"""
+        INSERT INTO {MANIFEST_TABLE}
+        (
+            commit_sha,
+            database,
+            schema,
+            sql_file,
+            validated_at,
+            deployed_at,
+            status
+        )
+        VALUES
+        (
+            %s, %s, %s, %s,
+            CURRENT_TIMESTAMP(),
+            NULL,
+            'VALIDATED'
+        )
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, (commit_sha, database, schema, sql_file))
+        print(f"📘 Manifest record inserted for {sql_file}")
+    finally:
+        cur.close()
+
+# ----------------------------
+# Main
+# ----------------------------
 
 def main():
     require_env_vars()
-    conn = connect_to_snowflake()
+
+    commit_sha = os.getenv("GITHUB_SHA")
+    database = os.environ["SNOWFLAKE_DATABASE"]
+    schema = infer_schema()
+
+    # 1️⃣ Validation phase (role from secrets)
+    validation_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
 
     sql_files = get_changed_sql_files()
     if not sql_files:
         print("ℹ️ No SQL changes detected")
-        conn.close()
-        sys.exit(0)
+        validation_conn.close()
+        return
 
-    print(f"🧪 Validating {len(sql_files)} SQL files in PREPROD")
+    print(f"🧪 Validating {len(sql_files)} SQL files")
+
     for sql_file in sql_files:
-        print(f"▶ Executing {sql_file}")
-        run_sql_file(conn, sql_file)
+        run_sql_file(validation_conn, sql_file)
 
-    # Save SQL files list to artifact for Deploy workflow
-    os.makedirs(".cicd", exist_ok=True)
-    artifact_file = ".cicd/changed_sql_files.json"
-    with open(artifact_file, "w") as f:
-        json.dump(sql_files, f)
-    print(f"📦 Saved changed SQL files artifact to {artifact_file}")
+    validation_conn.close()
 
-    print("✅ Validation completed successfully")
-    conn.close()
+    # 2️⃣ Manifest phase (hardcoded role, LAST STEP)
+    manifest_conn = connect_to_snowflake(MANIFEST_ROLE)
+
+    for sql_file in sql_files:
+        insert_manifest_record(
+            manifest_conn,
+            commit_sha,
+            database,
+            schema,
+            os.path.basename(sql_file),
+        )
+
+    manifest_conn.close()
+
+    print("✅ Validation completed and manifest recorded")
+
 
 if __name__ == "__main__":
     main()
