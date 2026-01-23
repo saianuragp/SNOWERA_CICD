@@ -42,11 +42,21 @@ def connect_to_snowflake(role):
     )
 
 
-def infer_schema_and_repo():
+def infer_schema():
+    """
+    Schema is derived from repo name after the first '.'
+    Example: ANUOPS.STG_MASTER_DATA -> STG_MASTER_DATA
+    """
     repo = os.getenv("GITHUB_REPOSITORY", "")
-    # schema = text after first period, repo_name = full repo
-    schema = repo.split(".", 1)[1] if "." in repo else "PUBLIC"
-    return schema, repo
+    return repo.split(".", 1)[1] if "." in repo else "PUBLIC"
+
+
+def get_repository_name():
+    """
+    Full repo name without org
+    Example: org/ANUOPS.STG_MASTER_DATA -> ANUOPS.STG_MASTER_DATA
+    """
+    return os.getenv("GITHUB_REPOSITORY", "").split("/")[-1]
 
 
 def get_changed_sql_files():
@@ -71,7 +81,7 @@ def run_sql_file(conn, file_path):
         cur.close()
 
 
-def insert_manifest_record(conn, repo_name, schema, sql_file):
+def insert_manifest_record(conn, repository, schema, sql_file):
     sql = f"""
         INSERT INTO {MANIFEST_TABLE}
         (
@@ -84,15 +94,18 @@ def insert_manifest_record(conn, repo_name, schema, sql_file):
         )
         VALUES
         (
-            %s, %s, %s,
+            %s,
+            %s,
+            %s,
             CURRENT_TIMESTAMP(),
             NULL,
             'VALIDATED'
         )
     """
+
     cur = conn.cursor()
     try:
-        cur.execute(sql, (repo_name, schema, sql_file))
+        cur.execute(sql, (repository, schema, sql_file))
         print(f"📘 Manifest record inserted for {sql_file}")
     finally:
         cur.close()
@@ -104,8 +117,8 @@ def insert_manifest_record(conn, repo_name, schema, sql_file):
 def main():
     require_env_vars()
 
-    commit_sha = os.getenv("GITHUB_SHA")
-    schema, repo_name = infer_schema_and_repo()
+    repository = get_repository_name()
+    schema = infer_schema()
 
     # 1️⃣ Validation phase (role from secrets)
     validation_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
@@ -123,15 +136,15 @@ def main():
 
     validation_conn.close()
 
-    # 2️⃣ Manifest phase (hardcoded role, LAST STEP)
+    # 2️⃣ Manifest phase (hardcoded role, MUST BE LAST)
     manifest_conn = connect_to_snowflake(MANIFEST_ROLE)
 
     for sql_file in sql_files:
         insert_manifest_record(
             manifest_conn,
-            repo_name,
+            repository,
             schema,
-            os.path.basename(sql_file),
+            sql_file,  # full repo-relative path
         )
 
     manifest_conn.close()
