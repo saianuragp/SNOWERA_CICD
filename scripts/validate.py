@@ -1,30 +1,9 @@
-import os
-import sys
-import subprocess
+import os, sys, json, subprocess
 import snowflake.connector
 
-# ----------------------------
-# Constants
-# ----------------------------
-
-MANIFEST_ROLE = "ANU_DEVOPS_FR_PROD_TASK_ETL"
-MANIFEST_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.GITHUB_DEPLOYMENT_LOG"
-
-REQUIRED_VARS = [
-    "SNOWFLAKE_ACCOUNT",
-    "SNOWFLAKE_USER",
-    "SNOWFLAKE_PASSWORD",
-    "SNOWFLAKE_ROLE",
-    "SNOWFLAKE_WAREHOUSE",
-    "SNOWFLAKE_DATABASE",
-]
-
-# ----------------------------
-# Helpers
-# ----------------------------
-
+# ---------------- ASCII ART ----------------
 def validate_header():
-    return r"""
+    print(r"""
     
      *        .  *   
     |-|       *   *
@@ -34,171 +13,138 @@ def validate_header():
     |-|     |  O o * |
    /___\    |o___O___|
     
-    """
+    """)
 
-def print_validate_summary():
-    """
-    Print a summary of the Snowflake environment for validation.
-    """
-    account = os.getenv("SNOWFLAKE_ACCOUNT", "<not set>")
-    user = os.getenv("SNOWFLAKE_USER", "<not set>")
-    role = os.getenv("SNOWFLAKE_ROLE", "<not set>")
-    warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "<not set>")
-    database = os.getenv("SNOWFLAKE_DATABASE", "<not set>")
-    schema = infer_schema()
-    
-    print("\n" + "="*60)
-    print("🚀  VALIDATE SUMMARY  🚀")
-    print("="*60)
-    print(f"Snowflake Account  : {account}")
-    print(f"Snowflake User     : {user}")
-    print(f"Role               : {role}")
-    print(f"Warehouse          : {warehouse}")
-    print(f"Database           : {database}")
-    print(f"Schema             : {schema}")
-    print("="*60 + "\n")
+# ---------------- CONFIG ----------------
+def load_config():
+    with open(".cicd/config.json") as f:
+        return json.load(f)
 
+CFG = load_config()
+ACCOUNT = CFG["account"]
+USER = CFG["user"]
+MANIFEST_ROLE = CFG["manifest_role"]
+MANIFEST_TABLE = CFG["manifest_table"]
+CONFIG_TABLE = CFG["config_table"]
 
-def require_env_vars():
-    for var in REQUIRED_VARS:
-        if not os.getenv(var):
-            print(f"❌ Missing environment variable: {var}")
-            sys.exit(1)
+PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
+if not PASSWORD:
+    print("❌ Missing SNOWFLAKE_PASSWORD")
+    sys.exit(1)
 
+REPO_NAME = os.getenv("GITHUB_REPOSITORY", "").split("/")[-1]
 
-def connect_to_snowflake(role):
+# ---------------- HELPERS ----------------
+def connect(role, warehouse, database):
     return snowflake.connector.connect(
-        user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ["SNOWFLAKE_PASSWORD"],
-        account=os.environ["SNOWFLAKE_ACCOUNT"],
+        user=USER,
+        password=PASSWORD,
+        account=ACCOUNT,
         role=role,
-        warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
-        database=os.environ["SNOWFLAKE_DATABASE"],
+        warehouse=warehouse,
+        database=database,
         insecure_mode=True,
     )
 
 
-def infer_schema():
-    """
-    Schema is derived from repo name after the first '.'
-    Example: ANUOPS.STG_MASTER_DATA -> STG_MASTER_DATA
-    """
-    repo = os.getenv("GITHUB_REPOSITORY", "")
-    return repo.split(".", 1)[1] if "." in repo else "PUBLIC"
+def get_repo_config(env):
+    conn = connect(MANIFEST_ROLE, "ANU_DEVOPS_WH_XS", "ANU_DEVOPS_DB_PROD")
 
+    sql = f"""
+        SELECT warehouse,
+               {env}_role,
+               {env}_database,
+               schema_name
+        FROM {CONFIG_TABLE}
+        WHERE repo_name=%s AND is_active=TRUE
+    """
 
-def get_repository_name():
-    """
-    Full repo name without org
-    Example: org/ANUOPS.STG_MASTER_DATA -> ANUOPS.STG_MASTER_DATA
-    """
-    return os.getenv("GITHUB_REPOSITORY", "").split("/")[-1]
+    cur = conn.cursor()
+    cur.execute(sql, (REPO_NAME,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        print("❌ Repo config not found")
+        sys.exit(1)
+
+    return row
 
 
 def get_changed_sql_files():
     result = subprocess.run(
         ["git", "diff", "--name-only", "origin/main...HEAD"],
-        capture_output=True,
-        text=True,
-        check=True,
+        capture_output=True, text=True, check=True
     )
     return [f for f in result.stdout.splitlines() if f.endswith(".sql")]
 
 
 def run_sql_file(conn, file_path):
-    with open(file_path, "r") as f:
-        sql_content = f.read()
-
+    with open(file_path) as f:
+        sql = f.read()
     cur = conn.cursor()
-    try:
-        cur.execute(sql_content)
-        print("=" * 60)
-        print(f"✅ Executed {file_path}")
-        print("=" * 60)
-    finally:
-        cur.close()
+    cur.execute(sql)
+    cur.close()
+    print(f"✅ Executed {file_path}")
 
 
-def insert_manifest_record(conn, repository, schema, sql_file):
+def insert_manifest(conn, schema, sql_file):
     sql = f"""
-        INSERT INTO {MANIFEST_TABLE}
-        (
-            repository,
-            schema,
-            sql_file,
-            validated_at,
-            deployed_at,
-            status
-        )
-        VALUES
-        (
-            %s,
-            %s,
-            %s,
-            CURRENT_TIMESTAMP(),
-            NULL,
-            'VALIDATED'
-        )
+        MERGE INTO {MANIFEST_TABLE} t
+        USING (SELECT %s repo, %s schema, %s file) s
+        ON t.repo_name=s.repo AND t.schema_name=s.schema AND t.sql_file=s.file
+        WHEN NOT MATCHED THEN
+          INSERT (repo_name,schema_name,sql_file,status,validated_at)
+          VALUES (s.repo,s.schema,s.file,'VALIDATED',CURRENT_TIMESTAMP())
     """
-
     cur = conn.cursor()
-    try:
-        cur.execute(sql, (repository, schema, sql_file))
-        print("=" * 60)
-        print(f"📘 Manifest record inserted for {sql_file}")
-        print("=" * 60)
-    finally:
-        cur.close()
+    cur.execute(sql, (REPO_NAME, schema, sql_file))
+    cur.close()
 
-# ----------------------------
-# Main
-# ----------------------------
 
+def print_summary(role, warehouse, database, schema):
+    print("="*60)
+    print("🚀 VALIDATE SUMMARY 🚀")
+    print("="*60)
+    print("Snowflake Account  : (config)")
+    print("Snowflake User     : (config)")
+    print(f"Role               : {role}")
+    print(f"Warehouse          : {warehouse}")
+    print(f"Database           : {database}")
+    print(f"Schema             : {schema}")
+    print(f"Repository         : {REPO_NAME}")
+    print("="*60)
+
+
+# ---------------- MAIN ----------------
 def main():
-    print(validate_header())
-    require_env_vars()
-    # print_validate_summary()
-    
+    validate_header()
 
-    repository = get_repository_name()
-    schema = infer_schema()
-
-    # 1️⃣ Validation phase (role from secrets)
-    validation_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
+    warehouse, role, database, schema = get_repo_config("preprod")
+    print_summary(role, warehouse, database, schema)
 
     sql_files = get_changed_sql_files()
     if not sql_files:
-        print("=" * 60)
         print("ℹ️ No SQL changes detected")
-        print("=" * 60)
-        validation_conn.close()
         return
-        
-    print("=" * 60)
-    print(f"🧪 Validating {len(sql_files)} SQL files")
-    print("=" * 60)
 
-    for sql_file in sql_files:
-        run_sql_file(validation_conn, sql_file)
+    conn = connect(role, warehouse, database)
 
-    validation_conn.close()
+    for f in sql_files:
+        run_sql_file(conn, f)
 
-    # 2️⃣ Manifest phase (hardcoded role, MUST BE LAST)
-    manifest_conn = connect_to_snowflake(MANIFEST_ROLE)
+    conn.close()
 
-    for sql_file in sql_files:
-        insert_manifest_record(
-            manifest_conn,
-            repository,
-            schema,
-            sql_file,
-        )
+    manifest_conn = connect(MANIFEST_ROLE, warehouse, database)
+
+    for f in sql_files:
+        insert_manifest(manifest_conn, schema, f)
 
     manifest_conn.close()
 
-    print("=" * 60)
-    print("✅ Validation completed and manifest recorded")
-    print("=" * 60)
+    print("✅ Validation completed and manifest updated")
+
 
 if __name__ == "__main__":
     main()
