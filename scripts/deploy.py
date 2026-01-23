@@ -62,7 +62,7 @@ def fetch_validated_sql_files(conn):
     schema = infer_schema()
 
     sql = f"""
-        SELECT sql_script_name
+        SELECT SQL_FILE
         FROM {MANIFEST_TABLE}
         WHERE commit_sha = %s
           AND database = %s
@@ -117,7 +117,7 @@ def update_manifest_record(sql_file):
         WHERE commit_sha = %s
           AND database = %s
           AND schema = %s
-          AND sql_script_name = %s
+          AND sql_file = %s
     """
 
     cur = conn.cursor()
