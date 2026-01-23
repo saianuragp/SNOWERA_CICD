@@ -17,7 +17,7 @@ def validate_header():
 
 # ---------------- CONFIG ----------------
 def load_config():
-    with open(".config/config.json") as f:
+    with open("./config/config.json") as f:
         return json.load(f)
 
 CFG = load_config()
