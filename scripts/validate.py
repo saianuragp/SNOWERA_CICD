@@ -42,9 +42,11 @@ def connect_to_snowflake(role):
     )
 
 
-def infer_schema():
+def infer_schema_and_repo():
     repo = os.getenv("GITHUB_REPOSITORY", "")
-    return repo.split(".", 1)[1] if "." in repo else "PUBLIC"
+    # schema = text after first period, repo_name = full repo
+    schema = repo.split(".", 1)[1] if "." in repo else "PUBLIC"
+    return schema, repo
 
 
 def get_changed_sql_files():
@@ -69,12 +71,12 @@ def run_sql_file(conn, file_path):
         cur.close()
 
 
-def insert_manifest_record(conn, commit_sha, database, schema, sql_file):
+def insert_manifest_record(conn, commit_sha, repo_name, schema, sql_file):
     sql = f"""
         INSERT INTO {MANIFEST_TABLE}
         (
             commit_sha,
-            database,
+            repository,
             schema,
             sql_file,
             validated_at,
@@ -91,7 +93,7 @@ def insert_manifest_record(conn, commit_sha, database, schema, sql_file):
     """
     cur = conn.cursor()
     try:
-        cur.execute(sql, (commit_sha, database, schema, sql_file))
+        cur.execute(sql, (commit_sha, repo_name, schema, sql_file))
         print(f"📘 Manifest record inserted for {sql_file}")
     finally:
         cur.close()
@@ -104,8 +106,7 @@ def main():
     require_env_vars()
 
     commit_sha = os.getenv("GITHUB_SHA")
-    database = os.environ["SNOWFLAKE_DATABASE"]
-    schema = infer_schema()
+    schema, repo_name = infer_schema_and_repo()
 
     # 1️⃣ Validation phase (role from secrets)
     validation_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
@@ -130,7 +131,7 @@ def main():
         insert_manifest_record(
             manifest_conn,
             commit_sha,
-            database,
+            repo_name,
             schema,
             os.path.basename(sql_file),
         )
