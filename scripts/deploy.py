@@ -56,6 +56,8 @@ def connect_snowflake(role_override=None):
 # Manifest-driven logic
 # ----------------------------
 
+# -- commit_sha = %s
+
 def fetch_validated_sql_files(conn):
     commit_sha = os.getenv("GITHUB_SHA")
     database = os.environ["SNOWFLAKE_DATABASE"]
@@ -64,8 +66,7 @@ def fetch_validated_sql_files(conn):
     sql = f"""
         SELECT SQL_FILE
         FROM {MANIFEST_TABLE}
-        WHERE commit_sha = %s
-          AND database = %s
+        WHERE database = %s
           AND schema = %s
           AND status = 'VALIDATED'
         ORDER BY validated_at
@@ -73,7 +74,7 @@ def fetch_validated_sql_files(conn):
 
     cur = conn.cursor()
     try:
-        cur.execute(sql, (commit_sha, database, schema))
+        cur.execute(sql, (database, schema))
         return [row[0] for row in cur.fetchall()]
     finally:
         cur.close()
@@ -114,15 +115,14 @@ def update_manifest_record(sql_file):
         SET
             deployed_at = CURRENT_TIMESTAMP(),
             status = 'DEPLOYED'
-        WHERE commit_sha = %s
-          AND database = %s
+        WHERE database = %s
           AND schema = %s
           AND sql_file = %s
     """
 
     cur = conn.cursor()
     try:
-        cur.execute(sql, (commit_sha, database, schema, sql_file))
+        cur.execute(sql, (database, schema, sql_file))
         print(f"📘 Manifest updated for {sql_file}")
     finally:
         cur.close()
