@@ -16,17 +16,11 @@ def validate_header():
     """)
 
 # ---------------- CONFIG ----------------
-def load_config():
-    with open(".cicd/config/config.json") as f:
-        return json.load(f)
-
-CFG = load_config()
-ACCOUNT = CFG["account"]
-USER = CFG["user"]
-MANIFEST_ROLE = CFG["manifest_role"]
-MANIFEST_TABLE = CFG["manifest_table"]
-CONFIG_TABLE = CFG["config_table"]
-
+ACCOUNT = "ZIGEXOL-MF56464"
+USER = "ANURAG_SNOWERA_CICD"
+MANIFEST_ROLE = "ANU_DEVOPS_FR_PROD_TASK_ETL"
+MANIFEST_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.GITHUB_DEPLOYMENT_LOG"
+CONFIG_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.SNOWFLAKE_CONFIG"
 PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
 if not PASSWORD:
     print("❌ Missing SNOWFLAKE_PASSWORD")
