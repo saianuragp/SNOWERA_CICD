@@ -155,7 +155,7 @@ def insert_manifest_record(conn, repository, schema, sql_file):
 # ----------------------------
 
 def main():
-    validate_header()
+    print(validate_header())
     require_env_vars()
     print_validate_summary()
     
