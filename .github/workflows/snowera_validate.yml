@@ -57,10 +57,3 @@ jobs:
       - name: Snowera Validate
         run: |
           python .cicd/scripts/validate.py
-
-      - name: Upload changed SQL artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: validated-sql-files
-          path: .cicd/artifacts/changed_sql_files.json
-          retention-days: 7
