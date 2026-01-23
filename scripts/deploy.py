@@ -171,7 +171,7 @@ def mark_as_deployed(conn, repository, schema, sql_file):
 # ----------------------------
 
 def main():
-    deploy_header()
+    print(deploy_header())
     require_env_vars()
 
     repository = get_repository_name()
