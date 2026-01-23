@@ -20,7 +20,7 @@ def validate_header():
 
 # ---------------- CONFIG ----------------
 def load_config():
-    with open(CONGIG_PATH) as f:
+    with open(CONFIG_PATH) as f:
         return json.load(f)
 
 CFG = load_config()
