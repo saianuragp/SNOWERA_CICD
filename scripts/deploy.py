@@ -1,7 +1,13 @@
 import os
 import sys
 import snowflake.connector
-import json
+
+# ----------------------------
+# Constants
+# ----------------------------
+
+MANIFEST_TABLE = ""
+MANIFEST_ROLE = ""
 
 REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
@@ -10,72 +16,142 @@ REQUIRED_VARS = [
     "SNOWFLAKE_ROLE",
     "SNOWFLAKE_WAREHOUSE",
     "SNOWFLAKE_DATABASE",
-    "CHANGED_SQL_FILES_ARTIFACT"
 ]
 
+# ----------------------------
+# Common helpers
+# ----------------------------
+
 def require_env_vars():
-    """Ensure all required environment variables exist"""
     for var in REQUIRED_VARS:
-        val = os.getenv(var)
-        if not val:
+        if not os.getenv(var):
             print(f"❌ Missing env var: {var}")
             sys.exit(1)
 
-def connect_to_snowflake():
-    """Create and return a Snowflake connection"""
+
+def infer_schema():
+    """
+    Schema name comes from repo name after '.'
+    Example: ANUOPS.STG_MASTER_DATA -> STG_MASTER_DATA
+    """
+    repo = os.getenv("GITHUB_REPOSITORY", "")
+    if "." not in repo:
+        print("❌ Repo name does not contain schema delimiter '.'")
+        sys.exit(1)
+    return repo.split(".", 1)[1]
+
+
+def connect_snowflake(role_override=None):
     return snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
         account=os.environ["SNOWFLAKE_ACCOUNT"],
-        role=os.environ["SNOWFLAKE_ROLE"],
+        role=role_override or os.environ["SNOWFLAKE_ROLE"],
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
         database=os.environ["SNOWFLAKE_DATABASE"],
-        insecure_mode=True
+        insecure_mode=True,
     )
 
-def get_sql_files_from_artifact(artifact_path):
-    """Read JSON file produced by PREPROD validate workflow"""
-    if not os.path.exists(artifact_path):
-        print(f"❌ Artifact file not found: {artifact_path}")
-        sys.exit(1)
-    with open(artifact_path, "r") as f:
-        files = json.load(f)
-    return files
+# ----------------------------
+# Manifest-driven logic
+# ----------------------------
 
-def run_sql_file(conn, file_path):
-    """Execute a SQL file using the given Snowflake connection"""
-    with open(file_path, "r") as f:
+def fetch_validated_sql_files(conn):
+    commit_sha = os.getenv("GITHUB_SHA")
+    database = os.environ["SNOWFLAKE_DATABASE"]
+    schema = infer_schema()
+
+    sql = f"""
+        SELECT sql_script_name
+        FROM {MANIFEST_TABLE}
+        WHERE commit_sha = %s
+          AND database = %s
+          AND schema = %s
+          AND status = 'VALIDATED'
+        ORDER BY validated_at
+    """
+
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, (commit_sha, database, schema))
+        return [row[0] for row in cur.fetchall()]
+    finally:
+        cur.close()
+
+
+def execute_sql_file(conn, sql_file):
+    if not os.path.exists(sql_file):
+        print(f"❌ SQL file missing in repo: {sql_file}")
+        sys.exit(1)
+
+    with open(sql_file, "r") as f:
         sql_content = f.read()
 
+    cur = conn.cursor()
     try:
-        cs = conn.cursor()
-        cs.execute(sql_content)
-        print(f"✅ Successfully executed {file_path}")
+        cur.execute(sql_content)
+        print(f"🚀 Deployed {sql_file}")
     except Exception as e:
-        print(f"❌ Error executing {file_path}: {e}")
+        print(f"❌ Deployment failed for {sql_file}: {e}")
         raise
     finally:
-        cs.close()
+        cur.close()
+
+# ----------------------------
+# Manifest update (LAST STEP)
+# Runs with different role
+# ----------------------------
+
+def update_manifest_record(sql_file):
+    conn = connect_snowflake(role_override=MANIFEST_ROLE)
+
+    commit_sha = os.getenv("GITHUB_SHA")
+    database = os.environ["SNOWFLAKE_DATABASE"]
+    schema = infer_schema()
+
+    sql = f"""
+        UPDATE {MANIFEST_TABLE}
+        SET
+            deployed_at = CURRENT_TIMESTAMP(),
+            status = 'DEPLOYED'
+        WHERE commit_sha = %s
+          AND database = %s
+          AND schema = %s
+          AND sql_script_name = %s
+    """
+
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, (commit_sha, database, schema, sql_file))
+        print(f"📘 Manifest updated for {sql_file}")
+    finally:
+        cur.close()
+        conn.close()
+
+# ----------------------------
+# Main
+# ----------------------------
 
 def main():
     require_env_vars()
-    conn = connect_to_snowflake()
 
-    artifact_path = os.environ["CHANGED_SQL_FILES_ARTIFACT"]
-    sql_files = get_sql_files_from_artifact(artifact_path)
+    deploy_conn = connect_snowflake()
 
+    sql_files = fetch_validated_sql_files(deploy_conn)
     if not sql_files:
-        print("ℹ️ No SQL changes detected to deploy")
-        conn.close()
-        sys.exit(0)
+        print("ℹ️ No validated SQL files found for deployment")
+        deploy_conn.close()
+        return
 
-    print(f"🚀 Deploying {len(sql_files)} SQL files to PROD")
+    print(f"🚀 Deploying {len(sql_files)} SQL files")
+
     for sql_file in sql_files:
-        print(f"▶ Executing {sql_file}")
-        run_sql_file(conn, sql_file)
+        execute_sql_file(deploy_conn, sql_file)
+        update_manifest_record(sql_file)  # MUST be last & separate role
 
-    print("✅ Deployment to PROD completed successfully")
-    conn.close()
+    deploy_conn.close()
+    print("✅ Deployment completed successfully")
+
 
 if __name__ == "__main__":
     main()
