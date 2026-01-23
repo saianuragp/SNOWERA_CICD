@@ -1,29 +1,9 @@
-import os
-import sys
+import os, sys, json
 import snowflake.connector
 
-# ----------------------------
-# Constants
-# ----------------------------
-
-MANIFEST_ROLE = "ANU_DEVOPS_FR_PROD_TASK_ETL"
-MANIFEST_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.GITHUB_DEPLOYMENT_LOG"
-
-REQUIRED_VARS = [
-    "SNOWFLAKE_ACCOUNT",
-    "SNOWFLAKE_USER",
-    "SNOWFLAKE_PASSWORD",
-    "SNOWFLAKE_ROLE",
-    "SNOWFLAKE_WAREHOUSE",
-    "SNOWFLAKE_DATABASE",
-]
-
-# ----------------------------
-# Helpers
-# ----------------------------
-
+# ---------------- ASCII ART ----------------
 def deploy_header():
-    return r"""
+    print(r"""
             !
             !
             *
@@ -49,162 +29,135 @@ def deploy_header():
           (   )
             *
             *
-    """
+    """)
 
-def print_deploy_summary():
-    """
-    Print a summary of the Snowflake environment for validation.
-    """
-    account = os.getenv("SNOWFLAKE_ACCOUNT", "<not set>")
-    user = os.getenv("SNOWFLAKE_USER", "<not set>")
-    role = os.getenv("SNOWFLAKE_ROLE", "<not set>")
-    warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "<not set>")
-    database = os.getenv("SNOWFLAKE_DATABASE", "<not set>")
-    schema = infer_schema()
-    
-    print("\n" + "="*60)
-    print("🚀  DEPLOY SUMMARY  🚀")
-    print("="*60)
-    print(f"Snowflake Account  : {account}")
-    print(f"Snowflake User     : {user}")
-    print(f"Role               : {role}")
-    print(f"Warehouse          : {warehouse}")
-    print(f"Database           : {database}")
-    print(f"Schema             : {schema}")
-    print("="*60 + "\n")
+# ---------------- CONFIG ----------------
+def load_config():
+    with open(".cicd/config.json") as f:
+        return json.load(f)
 
-def require_env_vars():
-    for var in REQUIRED_VARS:
-        if not os.getenv(var):
-            print(f"❌ Missing environment variable: {var}")
-            sys.exit(1)
+CFG = load_config()
+ACCOUNT = CFG["account"]
+USER = CFG["user"]
+MANIFEST_ROLE = CFG["manifest_role"]
+MANIFEST_TABLE = CFG["manifest_table"]
+CONFIG_TABLE = CFG["config_table"]
 
+PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
+if not PASSWORD:
+    print("❌ Missing SNOWFLAKE_PASSWORD")
+    sys.exit(1)
 
-def connect_to_snowflake(role):
+REPO_NAME = os.getenv("GITHUB_REPOSITORY", "").split("/")[-1]
+
+# ---------------- HELPERS ----------------
+def connect(role, warehouse, database):
     return snowflake.connector.connect(
-        user=os.environ["SNOWFLAKE_USER"],
-        password=os.environ["SNOWFLAKE_PASSWORD"],
-        account=os.environ["SNOWFLAKE_ACCOUNT"],
+        user=USER,
+        password=PASSWORD,
+        account=ACCOUNT,
         role=role,
-        warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
-        database=os.environ["SNOWFLAKE_DATABASE"],
+        warehouse=warehouse,
+        database=database,
         insecure_mode=True,
     )
 
 
-def infer_schema():
+def get_repo_config(env):
+    conn = connect(MANIFEST_ROLE, "ANU_DEVOPS_WH_XS", "ANU_DEVOPS_DB_PROD")
+
+    sql = f"""
+        SELECT warehouse,
+               {env}_role,
+               {env}_database,
+               schema_name
+        FROM {CONFIG_TABLE}
+        WHERE repo_name=%s AND is_active=TRUE
     """
-    Schema derived from repo name after the first '.'
-    """
-    repo = os.getenv("GITHUB_REPOSITORY", "")
-    return repo.split(".", 1)[1] if "." in repo else "PUBLIC"
+
+    cur = conn.cursor()
+    cur.execute(sql, (REPO_NAME,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        print("❌ Repo config not found")
+        sys.exit(1)
+
+    return row
 
 
-def get_repository_name():
-    """
-    Repo name without org
-    """
-    return os.getenv("GITHUB_REPOSITORY", "").split("/")[-1]
-
-
-def fetch_validated_sql_files(conn, repository, schema):
+def fetch_validated_files(conn, schema):
     sql = f"""
         SELECT sql_file
         FROM {MANIFEST_TABLE}
-        WHERE repository = %s
-          AND schema = %s
-          AND status = 'VALIDATED'
+        WHERE repo_name=%s
+          AND schema_name=%s
+          AND status='VALIDATED'
         ORDER BY validated_at
     """
-
     cur = conn.cursor()
-    try:
-        cur.execute(sql, (repository, schema))
-        return [row[0] for row in cur.fetchall()]
-    finally:
-        cur.close()
+    cur.execute(sql, (REPO_NAME, schema))
+    rows = cur.fetchall()
+    cur.close()
+    return [r[0] for r in rows]
 
 
 def run_sql_file(conn, file_path):
-    if not os.path.exists(file_path):
-        print("=" * 60)
-        print(f"❌ SQL file not found in repo: {file_path}")
-        print("=" * 60)
-        sys.exit(1)
-
-    with open(file_path, "r") as f:
-        sql_content = f.read()
-
+    with open(file_path) as f:
+        sql = f.read()
     cur = conn.cursor()
-    try:
-        cur.execute(sql_content)
-        print("=" * 60)
-        print(f"🚀 Deployed {file_path}")
-        print("=" * 60)
-    finally:
-        cur.close()
+    cur.execute(sql)
+    cur.close()
+    print(f"🚀 Deployed {file_path}")
 
 
-def mark_as_deployed(conn, repository, schema, sql_file):
+def mark_deployed(conn, schema, sql_file):
     sql = f"""
         UPDATE {MANIFEST_TABLE}
-        SET
-            deployed_at = CURRENT_TIMESTAMP(),
-            status = 'DEPLOYED'
-        WHERE repository = %s
-          AND schema = %s
-          AND sql_file = %s
-          AND status = 'VALIDATED'
+        SET status='DEPLOYED',
+            deployed_at=CURRENT_TIMESTAMP()
+        WHERE repo_name=%s AND schema_name=%s AND sql_file=%s
     """
-
     cur = conn.cursor()
-    try:
-        cur.execute(sql, (repository, schema, sql_file))
-        print("=" * 60)
-        print(f"📘 Manifest updated for {sql_file}")
-        print("=" * 60)
-    finally:
-        cur.close()
+    cur.execute(sql, (REPO_NAME, schema, sql_file))
+    cur.close()
 
-# ----------------------------
-# Main
-# ----------------------------
 
+def print_summary(account, user, role, warehouse, database, schema):
+    print("="*60)
+    print("🚀 DEPLOY SUMMARY 🚀")
+    print("="*60)
+    print(f"Account    : {account}")
+    print(f"User       : {user}")
+    print(f"Role       : {role}")
+    print(f"Warehouse  : {warehouse}")
+    print(f"Database   : {database}")
+    print(f"Schema     : {schema}")
+    print(f"Repository : {REPO_NAME}")
+    print("="*60)
+
+
+# ---------------- MAIN ----------------
 def main():
-    print(deploy_header())
-    require_env_vars()
-    # print_deploy_summary()
+    deploy_header()
 
-    repository = get_repository_name()
-    schema = infer_schema()
+    warehouse, role, database, schema = get_repo_config("prod")
+    print_summary(ACCOUNT, USER, role, warehouse, database, schema)
 
-    # 1️⃣ Fetch validated SQL (manifest role)
-    manifest_conn = connect_to_snowflake(MANIFEST_ROLE)
-
-    sql_files = fetch_validated_sql_files(
-        manifest_conn,
-        repository,
-        schema
-    )
+    manifest_conn = connect(MANIFEST_ROLE, warehouse, database)
+    sql_files = fetch_validated_files(manifest_conn, schema)
 
     if not sql_files:
-        print("ℹ️ No validated SQL files found for deployment")
-        manifest_conn.close()
+        print("ℹ️ No validated SQL files found")
         return
 
-    print(f"🚀 Deploying {len(sql_files)} SQL files to PRODUCTION")
+    deploy_conn = connect(role, warehouse, database)
 
-    # 2️⃣ Deploy phase (role from secrets)
-    deploy_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
-
-    for sql_file in sql_files:
-        run_sql_file(deploy_conn, sql_file)
-        mark_as_deployed(
-            manifest_conn,
-            repository,
-            schema,
-            sql_file
-        )
+    for f in sql_files:
+        run_sql_file(deploy_conn, f)
+        mark_deployed(manifest_conn, schema, f)
 
     deploy_conn.close()
     manifest_conn.close()
