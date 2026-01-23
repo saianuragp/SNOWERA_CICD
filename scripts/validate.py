@@ -76,7 +76,9 @@ def run_sql_file(conn, file_path):
     cur = conn.cursor()
     try:
         cur.execute(sql_content)
+        print("=" * 60)
         print(f"✅ Executed {file_path}")
+        print("=" * 60)
     finally:
         cur.close()
 
@@ -106,7 +108,9 @@ def insert_manifest_record(conn, repository, schema, sql_file):
     cur = conn.cursor()
     try:
         cur.execute(sql, (repository, schema, sql_file))
+        print("=" * 60)
         print(f"📘 Manifest record inserted for {sql_file}")
+        print("=" * 60)
     finally:
         cur.close()
 
@@ -125,11 +129,15 @@ def main():
 
     sql_files = get_changed_sql_files()
     if not sql_files:
+        print("=" * 60)
         print("ℹ️ No SQL changes detected")
+        print("=" * 60)
         validation_conn.close()
         return
-
+        
+    print("=" * 60)
     print(f"🧪 Validating {len(sql_files)} SQL files")
+    print("=" * 60)
 
     for sql_file in sql_files:
         run_sql_file(validation_conn, sql_file)
@@ -144,13 +152,14 @@ def main():
             manifest_conn,
             repository,
             schema,
-            sql_file,  # full repo-relative path
+            sql_file,
         )
 
     manifest_conn.close()
 
+    print("=" * 60)
     print("✅ Validation completed and manifest recorded")
-
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()
