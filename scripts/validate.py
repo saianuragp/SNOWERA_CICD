@@ -75,7 +75,6 @@ def insert_manifest_record(conn, commit_sha, repo_name, schema, sql_file):
     sql = f"""
         INSERT INTO {MANIFEST_TABLE}
         (
-            commit_sha,
             repository,
             schema,
             sql_file,
@@ -85,7 +84,7 @@ def insert_manifest_record(conn, commit_sha, repo_name, schema, sql_file):
         )
         VALUES
         (
-            %s, %s, %s, %s,
+            %s, %s, %s,
             CURRENT_TIMESTAMP(),
             NULL,
             'VALIDATED'
@@ -93,7 +92,7 @@ def insert_manifest_record(conn, commit_sha, repo_name, schema, sql_file):
     """
     cur = conn.cursor()
     try:
-        cur.execute(sql, (commit_sha, repo_name, schema, sql_file))
+        cur.execute(sql, (repo_name, schema, sql_file))
         print(f"📘 Manifest record inserted for {sql_file}")
     finally:
         cur.close()
@@ -130,7 +129,6 @@ def main():
     for sql_file in sql_files:
         insert_manifest_record(
             manifest_conn,
-            commit_sha,
             repo_name,
             schema,
             os.path.basename(sql_file),
