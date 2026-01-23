@@ -39,14 +39,13 @@ def validate_header():
 def print_validate_summary():
     """
     Print a summary of the Snowflake environment for validation.
-    Sensitive values are not displayed; only database and schema are shown.
     """
     account = os.getenv("SNOWFLAKE_ACCOUNT", "<not set>")
     user = os.getenv("SNOWFLAKE_USER", "<not set>")
     role = os.getenv("SNOWFLAKE_ROLE", "<not set>")
     warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "<not set>")
     database = os.getenv("SNOWFLAKE_DATABASE", "<not set>")
-    schema = infer_schema()  # derived from repo name
+    schema = infer_schema()
     
     print("\n" + "="*60)
     print("🚀  VALIDATE SUMMARY  🚀")
@@ -157,8 +156,9 @@ def insert_manifest_record(conn, repository, schema, sql_file):
 
 def main():
     validate_header()
-    print_validate_summary()
     require_env_vars()
+    print_validate_summary()
+    
 
     repository = get_repository_name()
     schema = infer_schema()
