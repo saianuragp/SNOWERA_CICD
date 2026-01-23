@@ -22,6 +22,36 @@ REQUIRED_VARS = [
 # Helpers
 # ----------------------------
 
+def deploy_header():
+    return r"""
+            !
+            !
+            *
+          /   \
+        /_______\
+       |=       =|
+       |         |
+       |   ||    |
+       |         |
+       |         |
+       |         |
+       |         |
+      /  |####|   \
+     /   |####|    \
+    |  / ^  |  ^ \  |
+    | /  (  |  )  \ |
+    |/   (  |  )   \|
+       ((       ))
+       ((   =   ))
+       ((   =   ))
+       ((       ))
+        ((     ))
+          (   )
+            *
+            *
+    """
+
+
 def require_env_vars():
     for var in REQUIRED_VARS:
         if not os.getenv(var):
@@ -76,7 +106,9 @@ def fetch_validated_sql_files(conn, repository, schema):
 
 def run_sql_file(conn, file_path):
     if not os.path.exists(file_path):
+        print("=" * 60)
         print(f"❌ SQL file not found in repo: {file_path}")
+        print("=" * 60)
         sys.exit(1)
 
     with open(file_path, "r") as f:
@@ -85,7 +117,9 @@ def run_sql_file(conn, file_path):
     cur = conn.cursor()
     try:
         cur.execute(sql_content)
+        print("=" * 60)
         print(f"🚀 Deployed {file_path}")
+        print("=" * 60)
     finally:
         cur.close()
 
@@ -105,7 +139,9 @@ def mark_as_deployed(conn, repository, schema, sql_file):
     cur = conn.cursor()
     try:
         cur.execute(sql, (repository, schema, sql_file))
+        print("=" * 60)
         print(f"📘 Manifest updated for {sql_file}")
+        print("=" * 60)
     finally:
         cur.close()
 
@@ -114,6 +150,7 @@ def mark_as_deployed(conn, repository, schema, sql_file):
 # ----------------------------
 
 def main():
+    deploy_header()
     require_env_vars()
 
     repository = get_repository_name()
