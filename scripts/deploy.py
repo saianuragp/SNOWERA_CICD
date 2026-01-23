@@ -6,123 +6,98 @@ import snowflake.connector
 # Constants
 # ----------------------------
 
-MANIFEST_ROLE = "ANU_DEVOPS_FR_PROD_TASK_ETL"
+MANIFEST_ROLE = "ANU_DEVOPS_FR_PROD_TASK_ETL"  # Hardcoded role for manifest updates
 MANIFEST_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.GITHUB_DEPLOYMENT_LOG"
 
 REQUIRED_VARS = [
     "SNOWFLAKE_ACCOUNT",
     "SNOWFLAKE_USER",
     "SNOWFLAKE_PASSWORD",
-    "SNOWFLAKE_ROLE",
+    "SNOWFLAKE_ROLE_PROD",
     "SNOWFLAKE_WAREHOUSE",
-    "SNOWFLAKE_DATABASE",
+    "SNOWFLAKE_DATABASE_PROD",
 ]
 
 # ----------------------------
-# Common helpers
+# Helpers
 # ----------------------------
 
 def require_env_vars():
     for var in REQUIRED_VARS:
         if not os.getenv(var):
-            print(f"❌ Missing env var: {var}")
+            print(f"❌ Missing environment variable: {var}")
             sys.exit(1)
 
 
-def infer_schema():
-    """
-    Schema name comes from repo name after '.'
-    Example: ANUOPS.STG_MASTER_DATA -> STG_MASTER_DATA
-    """
-    repo = os.getenv("GITHUB_REPOSITORY", "")
-    if "." not in repo:
-        print("❌ Repo name does not contain schema delimiter '.'")
-        sys.exit(1)
-    return repo.split(".", 1)[1]
-
-
-def connect_snowflake(role_override=None):
+def connect_to_snowflake(role, database=None):
+    db = database if database else os.environ["SNOWFLAKE_DATABASE_PROD"]
     return snowflake.connector.connect(
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
         account=os.environ["SNOWFLAKE_ACCOUNT"],
-        role=role_override or os.environ["SNOWFLAKE_ROLE"],
+        role=role,
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
-        database=os.environ["SNOWFLAKE_DATABASE"],
+        database=db,
         insecure_mode=True,
     )
 
-# ----------------------------
-# Manifest-driven logic
-# ----------------------------
 
-def fetch_validated_sql_files(conn):
-    schema = infer_schema()  # Make sure this matches what you inserted in validate
+def infer_schema_and_repo():
+    repo = os.getenv("GITHUB_REPOSITORY", "")
+    schema = repo.split(".", 1)[1] if "." in repo else "PUBLIC"
+    return schema, repo
 
+
+def fetch_validated_sql_files(conn, repo_name, commit_sha):
+    """Get all SQL files validated by validate.py for this repo and commit"""
+    schema, _ = infer_schema_and_repo()
     sql = f"""
-        SELECT SQL_FILE
+        SELECT sql_file
         FROM {MANIFEST_TABLE}
-        WHERE COMMIT_SHA = %s
-          AND SCHEMA = %s
-          AND STATUS = 'VALIDATED'
-          AND DEPLOYED_AT IS NULL
-        ORDER BY VALIDATED_AT
+        WHERE repository = %s
+          AND schema = %s
+          AND commit_sha = %s
+          AND status = 'VALIDATED'
+        ORDER BY validated_at
     """
-
     cur = conn.cursor()
     try:
-        cur.execute(sql, (commit_sha, database, schema))
+        cur.execute(sql, (repo_name, schema, commit_sha))
         return [row[0] for row in cur.fetchall()]
     finally:
         cur.close()
 
-def execute_sql_file(conn, sql_file):
-    if not os.path.exists(sql_file):
-        print(f"❌ SQL file missing in repo: {sql_file}")
-        sys.exit(1)
 
-    with open(sql_file, "r") as f:
+def run_sql_file(conn, file_path):
+    with open(file_path, "r") as f:
         sql_content = f.read()
 
     cur = conn.cursor()
     try:
         cur.execute(sql_content)
-        print(f"🚀 Deployed {sql_file}")
-    except Exception as e:
-        print(f"❌ Deployment failed for {sql_file}: {e}")
-        raise
+        print(f"✅ Executed {file_path}")
     finally:
         cur.close()
 
-# ----------------------------
-# Manifest update (LAST STEP)
-# Runs with different role
-# ----------------------------
 
-def update_manifest_record(sql_file):
-    conn = connect_snowflake(role_override=MANIFEST_ROLE)
-
-    commit_sha = os.getenv("GITHUB_SHA")
-    database = os.environ["SNOWFLAKE_DATABASE"]
-    schema = infer_schema()
-
+def mark_as_deployed(conn, repo_name, commit_sha, sql_file):
+    """Update manifest table to mark SQL file as deployed"""
+    schema, _ = infer_schema_and_repo()
     sql = f"""
         UPDATE {MANIFEST_TABLE}
-        SET
-            deployed_at = CURRENT_TIMESTAMP(),
+        SET deployed_at = CURRENT_TIMESTAMP(),
             status = 'DEPLOYED'
-        WHERE commit_sha = %s
+        WHERE repository = %s
           AND schema = %s
+          AND commit_sha = %s
           AND sql_file = %s
     """
-
     cur = conn.cursor()
     try:
-        cur.execute(sql, (commit_sha, database, schema, sql_file))
-        print(f"📘 Manifest updated for {sql_file}")
+        cur.execute(sql, (repo_name, schema, commit_sha, sql_file))
+        print(f"📘 Marked {sql_file} as DEPLOYED")
     finally:
         cur.close()
-        conn.close()
 
 # ----------------------------
 # Main
@@ -131,22 +106,34 @@ def update_manifest_record(sql_file):
 def main():
     require_env_vars()
 
-    deploy_conn = connect_snowflake()
+    commit_sha = os.getenv("GITHUB_SHA")
+    schema, repo_name = infer_schema_and_repo()
 
-    sql_files = fetch_validated_sql_files(deploy_conn)
+    # 1️⃣ Deployment phase (role from secrets)
+    deploy_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE_PROD"])
+
+    sql_files = fetch_validated_sql_files(deploy_conn, repo_name, commit_sha)
     if not sql_files:
         print("ℹ️ No validated SQL files found for deployment")
         deploy_conn.close()
         return
 
-    print(f"🚀 Deploying {len(sql_files)} SQL files")
+    print(f"🚀 Deploying {len(sql_files)} SQL files to PRODUCTION")
 
     for sql_file in sql_files:
-        execute_sql_file(deploy_conn, sql_file)
-        update_manifest_record(sql_file)  # MUST be last & separate role
+        run_sql_file(deploy_conn, sql_file)
 
     deploy_conn.close()
-    print("✅ Deployment completed successfully")
+
+    # 2️⃣ Manifest phase (hardcoded role, LAST STEP)
+    manifest_conn = connect_to_snowflake(MANIFEST_ROLE)
+
+    for sql_file in sql_files:
+        mark_as_deployed(manifest_conn, repo_name, commit_sha, sql_file)
+
+    manifest_conn.close()
+
+    print("✅ Deployment completed and manifest updated")
 
 
 if __name__ == "__main__":
