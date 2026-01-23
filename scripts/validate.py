@@ -71,7 +71,7 @@ def run_sql_file(conn, file_path):
         cur.close()
 
 
-def insert_manifest_record(conn, commit_sha, repo_name, schema, sql_file):
+def insert_manifest_record(conn, repo_name, schema, sql_file):
     sql = f"""
         INSERT INTO {MANIFEST_TABLE}
         (
