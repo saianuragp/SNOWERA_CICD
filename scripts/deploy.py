@@ -55,13 +55,12 @@ def fetch_validated_sql_files(conn, schema, repo_name, commit_sha):
         FROM {MANIFEST_TABLE}
         WHERE repository = %s
           AND schema = %s
-          AND commit_sha = %s
           AND status = 'VALIDATED'
         ORDER BY validated_at
     """
     cur = conn.cursor()
     try:
-        cur.execute(sql, (repo_name, schema, commit_sha))
+        cur.execute(sql, (repo_name, schema))
         return [row[0] for row in cur.fetchall()]
     finally:
         cur.close()
@@ -88,12 +87,11 @@ def mark_as_deployed(conn, repo_name, commit_sha, sql_file):
             status = 'DEPLOYED'
         WHERE repository = %s
           AND schema = %s
-          AND commit_sha = %s
           AND sql_file = %s
     """
     cur = conn.cursor()
     try:
-        cur.execute(sql, (repo_name, schema, commit_sha, sql_file))
+        cur.execute(sql, (repo_name, schema, sql_file))
         print(f"📘 Marked {sql_file} as DEPLOYED")
     finally:
         cur.close()
@@ -111,7 +109,7 @@ def main():
     # 1️⃣ Deployment phase (role from secrets)
     deploy_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
 
-    sql_files = fetch_validated_sql_files(deploy_conn, schema, repo_name, commit_sha)
+    sql_files = fetch_validated_sql_files(deploy_conn, schema, repo_name)
     if not sql_files:
         print("ℹ️ No validated SQL files found for deployment")
         deploy_conn.close()
@@ -128,7 +126,7 @@ def main():
     manifest_conn = connect_to_snowflake(MANIFEST_ROLE)
 
     for sql_file in sql_files:
-        mark_as_deployed(manifest_conn, repo_name, commit_sha, sql_file)
+        mark_as_deployed(manifest_conn, repo_name, sql_file)
 
     manifest_conn.close()
 
