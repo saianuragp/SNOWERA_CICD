@@ -51,6 +51,27 @@ def deploy_header():
             *
     """
 
+def print_deploy_summary():
+    """
+    Print a summary of the Snowflake environment for validation.
+    """
+    account = os.getenv("SNOWFLAKE_ACCOUNT", "<not set>")
+    user = os.getenv("SNOWFLAKE_USER", "<not set>")
+    role = os.getenv("SNOWFLAKE_ROLE", "<not set>")
+    warehouse = os.getenv("SNOWFLAKE_WAREHOUSE", "<not set>")
+    database = os.getenv("SNOWFLAKE_DATABASE", "<not set>")
+    schema = infer_schema()
+    
+    print("\n" + "="*60)
+    print("🚀  DEPLOY SUMMARY  🚀")
+    print("="*60)
+    print(f"Snowflake Account  : {account}")
+    print(f"Snowflake User     : {user}")
+    print(f"Role               : {role}")
+    print(f"Warehouse          : {warehouse}")
+    print(f"Database           : {database}")
+    print(f"Schema             : {schema}")
+    print("="*60 + "\n")
 
 def require_env_vars():
     for var in REQUIRED_VARS:
