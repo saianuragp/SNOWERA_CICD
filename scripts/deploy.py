@@ -56,20 +56,18 @@ def connect_snowflake(role_override=None):
 # Manifest-driven logic
 # ----------------------------
 
-# -- commit_sha = %s
-
 def fetch_validated_sql_files(conn):
-    commit_sha = os.getenv("GITHUB_SHA")
     database = os.environ["SNOWFLAKE_DATABASE"]
-    schema = infer_schema()
+    schema = infer_schema()  # Make sure this matches what you inserted in validate
 
     sql = f"""
-        SELECT SQL_FILE
+        SELECT "SQL_FILE"
         FROM {MANIFEST_TABLE}
-        WHERE database = %s
-          AND schema = %s
-          AND status = 'VALIDATED'
-        ORDER BY validated_at
+        WHERE "DATABASE" = %s
+          AND "SCHEMA" = %s
+          AND "STATUS" = 'VALIDATED'
+          AND "DEPLOYED_AT" IS NULL
+        ORDER BY "VALIDATED_AT"
     """
 
     cur = conn.cursor()
@@ -78,7 +76,6 @@ def fetch_validated_sql_files(conn):
         return [row[0] for row in cur.fetchall()]
     finally:
         cur.close()
-
 
 def execute_sql_file(conn, sql_file):
     if not os.path.exists(sql_file):
