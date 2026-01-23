@@ -48,9 +48,8 @@ def infer_schema_and_repo():
     return schema, repo
 
 
-def fetch_validated_sql_files(conn, repo_name, commit_sha):
+def fetch_validated_sql_files(conn, schema, repo_name, commit_sha):
     """Get all SQL files validated by validate.py for this repo and commit"""
-    schema, _ = infer_schema_and_repo()
     sql = f"""
         SELECT sql_file
         FROM {MANIFEST_TABLE}
@@ -112,7 +111,7 @@ def main():
     # 1️⃣ Deployment phase (role from secrets)
     deploy_conn = connect_to_snowflake(os.environ["SNOWFLAKE_ROLE"])
 
-    sql_files = fetch_validated_sql_files(deploy_conn, repo_name, commit_sha)
+    sql_files = fetch_validated_sql_files(deploy_conn, schema, repo_name, commit_sha)
     if not sql_files:
         print("ℹ️ No validated SQL files found for deployment")
         deploy_conn.close()
