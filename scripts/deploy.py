@@ -20,8 +20,8 @@ CFG = load_config()
 
 ACCOUNT = CFG["account"]
 USER = CFG["user"]
-MANIFEST_ROLE = CFG["manifest_role"]
-MANIFEST_TABLE = CFG["manifest_table"]
+MANIFEST_ROLE = CFG["role"]
+MANIFEST_TABLE = CFG["log_table"]
 CONFIG_TABLE = CFG["config_table"]
 
 PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
