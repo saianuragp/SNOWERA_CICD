@@ -1,51 +1,57 @@
-import os, sys, json, subprocess
+import os
+import sys
+import json
+import subprocess
 import snowflake.connector
-from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = BASE_DIR.parent / "config" / "snowflake_config.json"
+# ---------------- PATH SETUP ----------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", "config.json"))
 
-if not CONFIG_PATH.exists():
-    print(f"❌ Config file not found: {CONFIG_PATH}")
-    sys.exit(1)
+# ---------------- LOAD CONFIG ----------------
+def load_config():
+    if not os.path.exists(CONFIG_PATH):
+        print(f"❌ Config file not found: {CONFIG_PATH}")
+        sys.exit(1)
 
-with open(CONFIG_PATH) as f:
-    CFG = json.load(f)
-    print("Worked")
+    with open(CONFIG_PATH) as f:
+        return json.load(f)
 
-print(stop)
+CFG = load_config()
 
+ACCOUNT = CFG["account"]
+USER = CFG["user"]
+MANIFEST_ROLE = CFG["manifest_role"]
+MANIFEST_TABLE = CFG["manifest_table"]
+CONFIG_TABLE = CFG["config_table"]
 
-
-# ---------------- ASCII ART ----------------
-def validate_header():
-    print("="*60)
-    print("VALIDATION STARTED")
-    print("="*60)
-    print(r"""
-    
-     *        .  *   
-    |-|       *   *
-    |-|      _   .  _   
-    |-|     |   *    |
-    |-|     |~~~~~~~v|
-    |-|     |  O o * |
-   /___\    |o___O___|
-    
-    """)
-
-# ---------------- CONFIG ----------------
-ACCOUNT = "ZIGEXOL-MF56464"
-USER = "ANURAG_SNOWERA_CICD"
-MANIFEST_ROLE = "ANU_DEVOPS_FR_PROD_TASK_ETL"
-MANIFEST_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.GITHUB_DEPLOYMENT_LOG"
-CONFIG_TABLE = "ANU_DEVOPS_DB_PROD.SNOWERA_DEPLOYMENTS.SNOWFLAKE_CONFIG"
 PASSWORD = os.getenv("SNOWFLAKE_PASSWORD")
 if not PASSWORD:
-    print("❌ Missing SNOWFLAKE_PASSWORD")
+    print("❌ Missing SNOWFLAKE_PASSWORD secret")
     sys.exit(1)
 
 REPO_NAME = os.getenv("GITHUB_REPOSITORY", "").split("/")[-1]
+
+# ---------------- ASCII ART ----------------
+def validate_header():
+    print("=" * 60)
+    print("🚀 VALIDATION STARTED 🚀")
+    print("=" * 60)
+    print(r"""
+          *
+         / \
+        /___\
+        |=   =|
+        |     |
+        |  O  |
+        |     |
+        |     |
+       /|#####|\
+      / |#####| \
+         (     )
+         (     )
+          ***
+    """)
 
 # ---------------- HELPERS ----------------
 def connect(role, warehouse, database):
@@ -69,7 +75,8 @@ def get_repo_config(env):
                {env}_database,
                schema_name
         FROM {CONFIG_TABLE}
-        WHERE repo_name=%s AND is_active=TRUE
+        WHERE repo_name = %s
+          AND is_active = TRUE
     """
 
     cur = conn.cursor()
@@ -79,16 +86,18 @@ def get_repo_config(env):
     conn.close()
 
     if not row:
-        print("❌ Repo config not found")
+        print(f"❌ No config found for repo {REPO_NAME}")
         sys.exit(1)
 
-    return row
+    return row  # warehouse, role, database, schema
 
 
 def get_changed_sql_files():
     result = subprocess.run(
         ["git", "diff", "--name-only", "origin/main...HEAD"],
-        capture_output=True, text=True, check=True
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return [f for f in result.stdout.splitlines() if f.endswith(".sql")]
 
@@ -96,6 +105,7 @@ def get_changed_sql_files():
 def run_sql_file(conn, file_path):
     with open(file_path) as f:
         sql = f.read()
+
     cur = conn.cursor()
     cur.execute(sql)
     cur.close()
@@ -106,20 +116,23 @@ def insert_manifest(conn, schema, sql_file):
     sql = f"""
         MERGE INTO {MANIFEST_TABLE} t
         USING (SELECT %s repo, %s schema, %s file) s
-        ON t.repo_name=s.repo AND t.schema_name=s.schema AND t.sql_file=s.file
+        ON t.repo_name = s.repo
+           AND t.schema_name = s.schema
+           AND t.sql_file = s.file
         WHEN NOT MATCHED THEN
-          INSERT (repo_name,schema_name,sql_file,status,validated_at)
-          VALUES (s.repo,s.schema,s.file,'VALIDATED',CURRENT_TIMESTAMP())
+          INSERT (repo_name, schema_name, sql_file, status, validated_at)
+          VALUES (s.repo, s.schema, s.file, 'VALIDATED', CURRENT_TIMESTAMP())
     """
+
     cur = conn.cursor()
     cur.execute(sql, (REPO_NAME, schema, sql_file))
     cur.close()
 
 
 def print_summary(role, warehouse, database, schema):
-    print("="*60)
+    print("=" * 60)
     print("🚀 VALIDATE SUMMARY 🚀")
-    print("="*60)
+    print("=" * 60)
     print(f"Snowflake Account  : {ACCOUNT}.snowflakecomputing.com")
     print(f"Snowflake User     : {USER}")
     print(f"Role               : {role}")
@@ -127,8 +140,7 @@ def print_summary(role, warehouse, database, schema):
     print(f"Database           : {database}")
     print(f"Schema             : {schema}")
     print(f"Repository         : {REPO_NAME}")
-    print("="*60)
-
+    print("=" * 60)
 
 # ---------------- MAIN ----------------
 def main():
@@ -142,22 +154,19 @@ def main():
         print("ℹ️ No SQL changes detected")
         return
 
-    conn = connect(role, warehouse, database)
+    print(f"🧪 Validating {len(sql_files)} SQL files")
 
+    conn = connect(role, warehouse, database)
     for f in sql_files:
         run_sql_file(conn, f)
-
     conn.close()
 
     manifest_conn = connect(MANIFEST_ROLE, warehouse, database)
-
     for f in sql_files:
         insert_manifest(manifest_conn, schema, f)
-
     manifest_conn.close()
 
     print("✅ Validation completed and manifest updated")
-
 
 if __name__ == "__main__":
     main()
