@@ -99,7 +99,13 @@ def get_changed_sql_files():
 def run_sql_file(conn, file_path):
     with open(file_path) as f:
         sql = f.read()
-
+        
+    print("=" * 60)
+    print(f"📄 Executing SQL file: {file_path}")
+    print("-" * 60)
+    print(sql)
+    print("=" * 60)
+    
     cur = conn.cursor()
     cur.execute(sql)
     cur.close()
