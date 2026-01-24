@@ -1,10 +1,6 @@
 import os, sys, json, subprocess
 import snowflake.connector
-
-
-
 from pathlib import Path
-import json, sys
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR.parent / "config" / "config.json"
