@@ -6,7 +6,7 @@ import snowflake.connector
 
 # ---------------- PATH SETUP ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", "config.json"))
+CONFIG_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "config", "snowflake_config.json"))
 
 # ---------------- LOAD CONFIG ----------------
 def load_config():
