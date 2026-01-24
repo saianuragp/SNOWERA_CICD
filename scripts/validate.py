@@ -3,7 +3,7 @@ import snowflake.connector
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = BASE_DIR.parent / "config" / "config.json"
+CONFIG_PATH = BASE_DIR.parent / "config" / "snowflake_config.json"
 
 if not CONFIG_PATH.exists():
     print(f"❌ Config file not found: {CONFIG_PATH}")
