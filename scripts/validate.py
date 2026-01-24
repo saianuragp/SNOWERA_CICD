@@ -37,16 +37,14 @@ def validate_header():
     print("=" * 60)
     print("🚀 VALIDATION STARTED 🚀")
     print("=" * 60)
-    print(r"""
-        
+    print(r"""   
          *        .  *   
         |-|       *   *
         |-|      _   .  _   
         |-|     |   *    |
         |-|     |~~~~~~~v|
         |-|     |  O o * |
-       /___\    |o___O___|
-        
+       /___\    |o___O___|       
         """)
 
 # ---------------- HELPERS ----------------
@@ -109,20 +107,62 @@ def run_sql_file(conn, file_path):
 
 
 def insert_manifest(conn, schema, sql_file):
+    """
+    Insert or update manifest using validated_at as run discriminator
+    """
+
     sql = f"""
         MERGE INTO {MANIFEST_TABLE} t
-        USING (SELECT %s repo, %s schema, %s file) s
-        ON t.repo_name = s.repo
-           AND t.schema_name = s.schema
-           AND t.sql_file = s.file
-        WHEN NOT MATCHED THEN
-          INSERT (repo_name, schema_name, sql_file, status, validated_at)
-          VALUES (s.repo, s.schema, s.file, 'VALIDATED', CURRENT_TIMESTAMP())
+        USING (
+            SELECT %s AS repo_name,
+                   %s AS schema_name,
+                   %s AS sql_file
+        ) s
+        ON t.repo_name = s.repo_name
+           AND t.schema_name = s.schema_name
+           AND t.sql_file = s.sql_file
+
+        WHEN MATCHED THEN UPDATE SET
+            t.status = 'VALIDATED',
+            t.validated_at = CURRENT_TIMESTAMP(),
+            t.error_message = NULL,
+            t.validated_by = CURRENT_USER()
+
+        WHEN NOT MATCHED THEN INSERT
+        (
+            repo_name,
+            schema_name,
+            sql_file,
+            status,
+            validated_at,
+            deployed_at,
+            error_message,
+            validated_by,
+            deployed_by,
+            created_by,
+            created_at
+        )
+        VALUES
+        (
+            s.repo_name,
+            s.schema_name,
+            s.sql_file,
+            'VALIDATED',
+            CURRENT_TIMESTAMP(),
+            NULL,
+            NULL,
+            CURRENT_USER(),
+            NULL,
+            CURRENT_USER(),
+            CURRENT_TIMESTAMP()
+        )
     """
 
     cur = conn.cursor()
     cur.execute(sql, (REPO_NAME, schema, sql_file))
     cur.close()
+
+    print(f"📘 Manifest recorded: {sql_file}")
 
 
 def print_summary(role, warehouse, database, schema):
