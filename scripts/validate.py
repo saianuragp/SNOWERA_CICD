@@ -38,20 +38,16 @@ def validate_header():
     print("🚀 VALIDATION STARTED 🚀")
     print("=" * 60)
     print(r"""
-          *
-         / \
-        /___\
-        |=   =|
-        |     |
-        |  O  |
-        |     |
-        |     |
-       /|#####|\
-      / |#####| \
-         (     )
-         (     )
-          ***
-    """)
+        
+         *        .  *   
+        |-|       *   *
+        |-|      _   .  _   
+        |-|     |   *    |
+        |-|     |~~~~~~~v|
+        |-|     |  O o * |
+       /___\    |o___O___|
+        
+        """)
 
 # ---------------- HELPERS ----------------
 def connect(role, warehouse, database):
