@@ -1,6 +1,26 @@
 import os, sys, json, subprocess
 import snowflake.connector
 
+
+
+from pathlib import Path
+import json, sys
+
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_PATH = BASE_DIR.parent / "config" / "config.json"
+
+if not CONFIG_PATH.exists():
+    print(f"❌ Config file not found: {CONFIG_PATH}")
+    sys.exit(1)
+
+with open(CONFIG_PATH) as f:
+    CFG = json.load(f)
+    print("Worked")
+
+print(stop)
+
+
+
 # ---------------- ASCII ART ----------------
 def validate_header():
     print("="*60)
