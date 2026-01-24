@@ -104,7 +104,10 @@ def get_repo_config(env):
     return row  # warehouse, role, database, schema
 
 
-def fetch_validated_sql_files(schema):
+def fetch_latest_validated_sql_files(schema):
+    """
+    Fetch only SQL files from the latest validation batch (MAX(validated_at))
+    """
     conn = connect(MANIFEST_ROLE, "ANU_DEVOPS_WH_XS", "ANU_DEVOPS_DB_PROD")
 
     sql = f"""
@@ -113,11 +116,18 @@ def fetch_validated_sql_files(schema):
         WHERE repo_name = %s
           AND schema_name = %s
           AND status = 'VALIDATED'
-        ORDER BY validated_at
+          AND validated_at = (
+              SELECT MAX(validated_at)
+              FROM {MANIFEST_TABLE}
+              WHERE repo_name = %s
+                AND schema_name = %s
+                AND status = 'VALIDATED'
+          )
+        ORDER BY sql_file
     """
 
     cur = conn.cursor()
-    cur.execute(sql, (REPO_NAME, schema))
+    cur.execute(sql, (REPO_NAME, schema, REPO_NAME, schema))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -136,14 +146,17 @@ def run_sql_file(conn, file_path):
     cur = conn.cursor()
     cur.execute(sql)
     cur.close()
+
     print(f"✅ Deployed {file_path}")
 
 
-def update_manifest(conn, schema, sql_file):
+def update_manifest_deployed(conn, schema, sql_file):
     sql = f"""
         UPDATE {MANIFEST_TABLE}
         SET status = 'DEPLOYED',
-            deployed_at = CURRENT_TIMESTAMP()
+            deployed_at = CURRENT_TIMESTAMP(),
+            deployed_by = CURRENT_USER(),
+            error_message = NULL
         WHERE repo_name = %s
           AND schema_name = %s
           AND sql_file = %s
@@ -153,6 +166,8 @@ def update_manifest(conn, schema, sql_file):
     cur = conn.cursor()
     cur.execute(sql, (REPO_NAME, schema, sql_file))
     cur.close()
+
+    print(f"📗 Manifest updated: {sql_file}")
 
 
 def print_summary(role, warehouse, database, schema):
@@ -175,21 +190,27 @@ def main():
     warehouse, role, database, schema = get_repo_config("prod")
     print_summary(role, warehouse, database, schema)
 
-    sql_files = fetch_validated_sql_files(schema)
+    sql_files = fetch_latest_validated_sql_files(schema)
     if not sql_files:
-        print("ℹ️ No validated SQL files found")
+        print("ℹ️ No validated SQL files found for latest run")
         return
 
     print(f"🚀 Deploying {len(sql_files)} SQL files")
 
-    conn = connect(role, warehouse, database)
+    deploy_conn = connect(role, warehouse, database)
+
     for f in sql_files:
-        run_sql_file(conn, f)
-    conn.close()
+        try:
+            run_sql_file(deploy_conn, f)
+        except Exception as e:
+            print(f"❌ Deployment failed for {f}: {e}")
+            sys.exit(1)
+
+    deploy_conn.close()
 
     manifest_conn = connect(MANIFEST_ROLE, warehouse, database)
     for f in sql_files:
-        update_manifest(manifest_conn, schema, f)
+        update_manifest_deployed(manifest_conn, schema, f)
     manifest_conn.close()
 
     print("🎉 Deployment completed successfully")
